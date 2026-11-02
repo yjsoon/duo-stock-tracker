@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { AppleStore, COUNTRIES, normalizeCountry, normalizeProduct, productName } from './apple.js';
 import { availabilityKeys, parseCatalog, parseFulfillment, parseProducts, selectProducts, shortPickupQuote } from './parse.js';
-import { configuredNotifiers, notifyAll } from './notify.js';
+import { configuredNotifiers, notifyAll, cancelNtfyRepeats } from './notify.js';
 import { loadState, saveState } from './state.js';
 
 const SETTING_KEYS = ['country', 'product', 'model', 'filters', 'postalCode', 'maxDistanceKm', 'emailTo', 'ntfyTopic'];
@@ -259,7 +259,10 @@ export class Checker {
       this.error = err.message;
       this.blocked = Boolean(err.blocked);
       this.log(`check failed: ${err.message}`);
-      await this.store?.close().catch(() => {});
+      // Never let a hung Chromium block the next check: give close() 10s, then SIGKILL.
+      const proc = this.store?.browser?.process?.();
+      await Promise.race([this.store?.close().catch(() => {}), new Promise((r) => setTimeout(r, 10_000))]);
+      try { proc?.kill('SIGKILL'); } catch {}
       this.store.browser = undefined;
     }
   }
@@ -303,10 +306,11 @@ export class Checker {
         `${current.size} available, ${fresh.length} new${sample ? ` (e.g. "${sample}")` : ''}`,
     );
 
+    if (current.size === 0) { const n = cancelNtfyRepeats(); if (n) this.log(`cancelled ${n} pending ntfy repeat(s): no longer in stock`); }
     let delivered = true;
     if (fresh.length > 0) {
       const message = buildMessage(fresh.map((k) => current.get(k)), names, store.productUrl);
-      this.log(`${message.subject}\n${message.text}`);
+      this.log(`${message.subject}\n${message.detail}`);
       const notifiers = this.notifiers();
       if (!this.dryRun && notifiers.length > 0) delivered = await notifyAll(notifiers, message, this.log);
     }
@@ -357,7 +361,30 @@ export function buildMessage(items, names, url) {
   const base = 'https://www.apple.com/sg/shop/buy-iphone/iphone-duo/7.6-inch-display-512gb-';
   const lname = String(firstName).toLowerCase();
   const direct = /star\s*white/.test(lname) ? base + 'star-white' : /night\s*sky/.test(lname) ? base + 'night-sky' : url;
-  return { subject: `In stock: ${firstName}, ${where}${more}`, text: lines.join('\n'), url: direct };
+  const alerts = colourAtLocation(items, names, base, url);
+  const short = alerts.map((a) => a.subject);
+  return { subject: short.join(', '), text: short.join('\n'), url: direct, alerts, detail: lines.join('\n') };
+}
+
+function colourOf(name) {
+  const n = String(name).toLowerCase();
+  return /star\s*white/.test(n) ? 'Star White' : /night\s*sky/.test(n) ? 'Night Sky' : String(name);
+}
+
+// YJ format: "Night Sky at Orchard Road", one per colour+location, link = that colour's 512GB buy page.
+export function colourAtLocation(items, names, base, url) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const colour = colourOf(names.get(item.partNumber) ?? item.title ?? item.partNumber);
+    const loc = 'storeNumber' in item ? String(item.storeName).replace(/^Apple\s+/i, '') : 'Apple Online (2-hr courier)';
+    const subject = `${colour} at ${loc}`;
+    if (seen.has(subject)) continue;
+    seen.add(subject);
+    const link = colour === 'Star White' ? base + 'star-white' : colour === 'Night Sky' ? base + 'night-sky' : url;
+    out.push({ subject, text: `${subject}\n${link}`, url: link });
+  }
+  return out;
 }
 
 function pick(obj) {

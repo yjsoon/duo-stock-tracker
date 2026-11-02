@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { Checker } from './checker.js';
 import { configuredNotifiers, notifyAll } from './notify.js';
 import { PushStore } from './push.js';
@@ -60,6 +61,7 @@ async function main() {
     timer = setTimeout(async () => {
       const started = Date.now();
       try { await checker.check(); } catch (err) { log(`check crashed: ${err.message}`); }
+      writeFile(env.HEARTBEAT_FILE || '.heartbeat', new Date().toISOString() + '\n').catch(() => {});
       if (checker.blocked) {
         backoff = Math.min(backoff * 2, 8);
         log(`blocked/rate-limited (${checker.error}); backing off x${backoff}`);
@@ -81,6 +83,14 @@ async function main() {
     });
   }
   schedule(0);
+  // Watchdog: if no check has finished for 4 min (or the event loop jumped, e.g. host pause), restart cleanly.
+  let lastTick = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    if (now - lastTick > 60_000) log(`clock jump ${Math.round((now - lastTick) / 1000)}s: host was paused`);
+    lastTick = now;
+    if (checker.lastChecked && now - Date.parse(checker.lastChecked) > 240_000 && !checker.checking) schedule(0);
+  }, 15_000).unref();
 
   const shutdown = async () => {
     clearTimeout(timer);

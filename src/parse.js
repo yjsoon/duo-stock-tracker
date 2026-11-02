@@ -69,7 +69,10 @@ export function parseFulfillment(json, { maxDistanceKm = Infinity, country } = {
         city: store.city,
         distance,
         distanceKm,
-        available: STORE_AVAILABLE.has(part.pickupDisplay),
+        // Belt and braces: also trust the quote text in case pickupDisplay lags or uses another value.
+        available: STORE_AVAILABLE.has(part.pickupDisplay)
+          || (/\bavailable\b|today|tomorrow/i.test(stripHtml(part.pickupSearchQuote ?? part.messageTypes?.regular?.storePickupQuote ?? ''))
+            && !/unavailable|not available/i.test(stripHtml(part.pickupSearchQuote ?? part.messageTypes?.regular?.storePickupQuote ?? ''))),
         quote: stripHtml(part.pickupSearchQuote ?? part.messageTypes?.regular?.storePickupQuote ?? ''),
         title: part.messageTypes?.regular?.storePickupProductTitle ?? null,
       });

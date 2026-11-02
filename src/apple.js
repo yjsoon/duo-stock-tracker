@@ -142,19 +142,31 @@ export class AppleStore {
   }
 
   async inPageJson(path) {
-    const { status, text } = await this.page.evaluate(async (url) => {
-      const r = await fetch(url, { headers: { 'x-aos-ui-fetch-call-1': '1' }, signal: AbortSignal.timeout(20000) });
-      return { status: r.status, text: await r.text() };
+    const { status, text, error, finalUrl, redirected } = await this.page.evaluate(async (url) => {
+      try {
+        const r = await fetch(url, { headers: { 'x-aos-ui-fetch-call-1': '1' }, signal: AbortSignal.timeout(20000) });
+        return { status: r.status, text: await r.text(), finalUrl: r.url, redirected: r.redirected };
+      } catch (e) {
+        return { status: 0, text: '', error: String(e && e.message || e) };
+      }
     }, path);
+    this.lastStatus = status;
+    const fail = (why) => {
+      const name = path.split('?')[0].split('/').pop();
+      const body = (text || '').slice(0, 200).replace(/\s+/g, ' ');
+      this.log(`main-fail endpoint=${name} status=${status} why=${why}${error ? ` error=${error}` : ''}${redirected ? ` redirected=${String(finalUrl).split('?')[0]}` : ''} body=${JSON.stringify(body)}`);
+    };
+    if (error) { fail('fetch-error'); return null; }
     if (status === 403 || status === 429) {
       const e = new Error(`${path.split('?')[0]} returned ${status}`);
       e.blocked = true;
       throw e;
     }
-    if (status !== 200) return null;
+    if (status !== 200) { fail('non-200'); return null; }
     try {
       return JSON.parse(text);
-    } catch {
+    } catch (e) {
+      fail(`json-parse: ${e.message}`);
       return null;
     }
   }
@@ -167,12 +179,35 @@ export class AppleStore {
     // fulfillment-messages stays 541 on this path after the shield cookie is set.
     // The retail pickup endpoint returns the same store rows.
     if (this.country === 'sg') {
-      const stock = await this.inPageJson(path);
-      if (stock) return stock;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) await this.page.waitForTimeout(2_000 + Math.floor(Math.random() * 2_000));
+        const stock = await this.inPageJson(path);
+        if (stock) {
+          this.log(`endpoint=fulfillment-messages attempt=${attempt + 1}`);
+          return stock;
+        }
+      }
+      // A long-lived session tends to get 541 on every call; a fresh session usually reads it again.
+      try {
+        await this.newSession();
+        await this.loadProductPage();
+        await this.page.waitForTimeout(3_000);
+        const fresh = await this.inPageJson(path);
+        if (fresh) {
+          this.log('endpoint=fulfillment-messages attempt=fresh-session');
+          return fresh;
+        }
+      } catch (e) {
+        if (e.blocked) throw e;
+        this.log(`fresh-session retry failed: ${e.message}`);
+      }
       const pickupParams = new URLSearchParams({ pl: 'true', location });
       partNumbers.forEach((pn, i) => pickupParams.set(`parts.${i}`, pn));
       const pickup = await this.inPageJson(`${this.shopPath}/retail/pickup-message?${pickupParams}`);
-      if (pickup) return pickup;
+      if (pickup) {
+        this.log('endpoint=pickup-message (fallback after 3 fulfillment-messages failures; may be stale)');
+        return pickup;
+      }
       throw new Error('pickup-message returned non-JSON');
     }
 
