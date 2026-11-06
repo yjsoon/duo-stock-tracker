@@ -1,20 +1,24 @@
 {
-  "name": "apple-stock",
-  "version": "0.1.0",
-  "description": "Get pinged when an Apple product is available for in-store pickup or 2-hour courier delivery near you.",
+  "name": "apple-stock-sg",
+  "version": "0.2.0",
+  "description": "Get an ntfy alert when an Apple product is available for in-store pickup in Singapore. Runs as a Cloudflare Worker or a plain Node.js process.",
   "type": "module",
   "license": "MIT",
+  "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=.env src/index.js",
-    "check": "node --env-file-if-exists=.env src/index.js --once",
-    "test-notify": "node --env-file-if-exists=.env src/index.js --test-notify",
-    "test": "node --test test/*.test.js"
+    "start": "node --env-file-if-exists=.env src/node.js",
+    "check": "node --env-file-if-exists=.env src/node.js --once",
+    "test-notify": "node --env-file-if-exists=.env src/node.js --test-notify",
+    "models": "node --env-file-if-exists=.env src/node.js --models",
+    "test": "node --test test/",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "cf:check-build": "wrangler deploy --dry-run --outdir .wrangler/dry-run"
   },
-  "dependencies": {
-    "playwright": "1.62.1",
-    "web-push": "3.6.7"
+  "devDependencies": {
+    "wrangler": "4.158.0"
   }
 }

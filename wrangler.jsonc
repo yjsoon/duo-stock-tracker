@@ -1,0 +1,24 @@
+{
+  // Cloudflare Worker for apple-stock-sg. See AGENTS.md for setup.
+  "name": "apple-stock-sg",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  // Safety net only: every 30 minutes, re-arm the check alarm if it is missing. The alarm sets the real cadence.
+  "triggers": { "crons": ["*/30 * * * *"] },
+  "durable_objects": { "bindings": [{ "name": "WATCHER", "class_name": "Watcher" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Watcher"] }],
+  "vars": {
+    "POSTAL_CODE": "238857",
+    "MODELS": "MK2F4X/A,MK2G4X/A",
+    "MAX_DISTANCE_KM": "50",
+    "INTERVAL_SECONDS": "120",
+    "ALERT_COOLDOWN_MIN": "60",
+    "STALE_ALERT_MIN": "60",
+    "NTFY_SERVER": "https://ntfy.sh",
+    "PRODUCT_URL": "https://www.apple.com/sg/shop/buy-iphone/iphone-duo"
+  }
+  // Secrets, set with `npx wrangler secret put <NAME>`: NTFY_TOPIC (required), ADMIN_TOKEN (required for
+  // /status, /check and /test-notify), NTFY_TOKEN (only for a protected ntfy server).
+}

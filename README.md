@@ -1,122 +1,92 @@
-# apple-stock
+# apple-stock-sg
 
-Get an alert when an Apple product can be picked up at a store near a postal code. This is the MIT-licensed checker from [kelindi/apple-stock](https://github.com/kelindi/apple-stock) (Copyright (c) 2026 Kelindi), with the Singapore store added. The license is in [LICENSE](LICENSE).
+Get a phone notification through [ntfy](https://ntfy.sh) when an iPhone (or any Apple product with a part number) can be picked up at an Apple Store in Singapore.
+
+It runs in one of two ways. Both use the same check code and settings.
+
+- **Cloudflare Worker** on your own Cloudflare account. The Workers Free plan is enough. Nothing runs on your machine.
+- **Self-hosted**: one Node.js 22.9+ process on any always-on machine. It needs no npm packages.
+
+To have a coding agent set it up for you, point Claude Code, Codex or a similar agent at this repo and say "set this up". [AGENTS.md](AGENTS.md) walks the agent through it. `CLAUDE.md` just imports that file. To set it up by hand, follow the same steps yourself.
+
+Based on [kelindi/apple-stock](https://github.com/kelindi/apple-stock) by Kelindi, used under the MIT License. See [LICENSE](LICENSE).
 
 ## How a check works
 
-On a timer, the process opens the product page in headless Chromium and reads each model's part number from that page. It then calls Apple's fulfillment endpoint from inside the page. For the United States that URL is `https://www.apple.com/shop/fulfillment-messages`. For Singapore the checker asks `https://www.apple.com/sg/shop/fulfillment-messages` from the same page. When that response is HTTP 541 or not JSON, it calls `https://www.apple.com/sg/shop/retail/pickup-message` and reads `body.stores`. A direct request from a script gets HTTP 541 from Apple's shield, so both calls are made by the page itself.
-
-`parseFulfillment` turns the JSON into one row per store and part. Distances are stored in kilometres. The United States display is miles. Canada and Singapore display kilometres. If a part goes from unavailable to available, you get one alert. You get another alert if it sells out and comes back.
+Each check sends one HTTP GET to Apple's in-store pickup endpoint:
 
 ```
-src/index.js    starts the check loop
-src/apple.js    product pages and the fulfillment request
-src/parse.js    part numbers and availability
-src/checker.js  settings, what changed since last time, when to alert
-src/notify.js   email, ntfy, and Discord
+https://www.apple.com/sg/shop/retail/pickup-message?pl=true&location=<POSTAL_CODE>&parts.0=<PART>&parts.1=<PART>
 ```
 
-## Parts and stores
+Apple answers this from a plain HTTP client, so no browser is needed. The checker keeps the session cookies Apple sets and sends them back on the next check. `src/parse.js` turns `body.stores` into one row per store and part. An alert goes out when a store/part is `pickupDisplay: "available"` and was not available at the last clean check.
 
-These values were read from Apple on 29 Oct 2026. Set the part numbers with `MODELS`. The checker does not hardcode them.
+The defaults are conservative, because Apple and ntfy.sh both push back on frequent requests:
 
-Part numbers are the `partNumber` fields in the `metrics` JSON on [the Singapore iPhone Duo page](https://www.apple.com/sg/shop/buy-iphone/iphone-duo). The same two numbers are on `productSelectionData` for `dimensionCapacity` `512gb`.
+- **Cadence.** A check runs every `INTERVAL_SECONDS` (default 120, minimum 60) with ±20% jitter, so 96–144 s. At 15–20 s cadence Apple returned long runs of HTTP 541 ("Page Not Found" HTML). At around 2 minutes most checks came back clean.
+- **Failures.** A 541, a timeout or non-JSON counts as unknown. The checker tries again at the normal cadence and changes no state. A 403 or 429 drops the session and doubles the wait, up to ×8. A `Retry-After` header is honoured, capped at 15 minutes.
+- **Alert dedupe.** All new finds in one check go into one ntfy message, with no repeats. Only an explicit "unavailable" in a clean response clears a find. A failed check, or a response that leaves a store out, never re-arms an alert. The same store and model alerts at most once per `ALERT_COOLDOWN_MIN` (default 60), even if stock flaps. If ntfy rejects a send, for example with ntfy.sh's daily limit (HTTP 429), the find is retried on the next check.
+- **Blind notice.** After `STALE_ALERT_MIN` (default 60) minutes without a clean answer, you get one low-priority "cannot read Apple" message. It says stock is unknown and is not a stock alert. It resets after the next clean check.
 
-| Part number | Model |
-| --- | --- |
-| `MK2F4X/A` | iPhone Duo 512GB Star White |
-| `MK2G4X/A` | iPhone Duo 512GB Night Sky |
+The same request to `/sg/shop/fulfillment-messages`, which also carries delivery and courier data, returned HTTP 541 every time it was tried, from a server, a Cloudflare Worker and a real browser. This checker therefore covers in-store pickup only.
 
-Store numbers are `data-store-number` on each store link at [Apple's Singapore store list](https://www.apple.com/sg/retail/storelist/), and the same ids appear as `RgdsStore.id` in that page.
+```
+src/core.js     config, the Apple request, alert rules, ntfy
+src/parse.js    Apple response parsers
+src/node.js     self-hosted loop and CLI (state in .state.json)
+src/worker.js   Cloudflare Worker + Durable Object (state in Durable Object storage)
+wrangler.jsonc  Worker config and non-secret settings
+test/           node --test suite, with a trimmed live Apple response in test/fixtures/
+```
 
-| Store | Store number | Postal code |
+## Settings
+
+Self-hosted reads `.env` (copy `.env.example`). The Worker reads `vars` in `wrangler.jsonc` and secrets set with `npx wrangler secret put`.
+
+| Name | Default | Meaning |
 | --- | --- | --- |
-| Apple Orchard Road | `R669` | 238857 |
-| Apple Marina Bay Sands | `R633` | 018972 |
-| Apple Jewel Changi Airport | `R736` | 819666 |
-
-A live request from this environment to `/sg/shop/fulfillment-messages` for `MK2F4X/A` and `MK2G4X/A` at postal code `238857` returned HTTP 541 and an HTML document titled "Page Not Found". The same browser session got HTTP 200 JSON from `/sg/shop/retail/pickup-message`. The body has `head.status` `200` and `body.stores`. Orchard Road `R669` is 0.02 km, Marina Bay Sands `R633` is 3.21 km, and Jewel Changi Airport `R736` is 18.2 km. Both parts were `pickupDisplay` `unavailable` with quote "Currently unavailable". A trimmed copy of that response is `test/fixtures/sg-pickup-message.json`. The test passes that file to `parseFulfillment` as Apple returned it.
-
-## Run a Singapore check on Linux
-
-You need Node.js 22 or newer.
-
-```sh
-npm install
-npx playwright install --with-deps chromium
-cp .env.example .env
-```
-
-Edit `.env` and set `NTFY_TOPIC` to a long random string. `.env` is listed in `.gitignore`. Do not commit it.
-
-```sh
-POSTAL_CODE=238857
-COUNTRY=SG
-PRODUCT=iphone-duo
-MODELS=MK2F4X/A,MK2G4X/A
-PICKUP_ONLY=true
-MAX_DISTANCE_KM=50
-INTERVAL_SECONDS=120
-NTFY_SERVER=https://ntfy.sh
-NTFY_TOPIC=replace-with-a-long-random-topic
-```
-
-`238857` is the Orchard Road store's postal code. `MAX_DISTANCE_KM=50` includes Jewel Changi Airport, which the live pickup response placed 18.2 km from that code. `PICKUP_ONLY=true` alerts when a part is available for in-store pickup. Delete that line if you also want an alert for 2-hour courier delivery.
-
-`COUNTRY=us` still takes a ZIP code such as `10001` and shows miles. `COUNTRY=ca` still takes a Canadian postal code such as `M5V3L9`.
-
-Send a test alert, then run one check, then leave it running.
-
-```sh
-npm run test-notify
-npm run check
-npm start
-```
-
-`npm run test-notify` logs `notified via ntfy` when the topic accepts the post. The phone shows the title "apple-stock test notification".
-
-`npm start` checks about every `INTERVAL_SECONDS`, with a small random jitter, and serves the UI at http://127.0.0.1:4321. The minimum interval is 30 seconds. To keep the process up after you log out, install [`examples/apple-stock.service`](examples/apple-stock.service) as a user systemd unit.
-
-A check that reaches Apple and finds these two parts unavailable logs a line in this shape.
-
-```
-2026-10-29T04:19:56.135Z checked 2 model(s) at 3 store(s) within 50 km of 238857: 0 available, 0 new (e.g. "Currently unavailable")
-```
-
-That line is the output of `npm run check` on 29 Oct 2026 with the Singapore `.env` above. Both parts were unavailable at all three stores.
-
-When a part is newly available for pickup, the log prints a subject like `In stock: iPhone Duo 512GB Star White, pickup at Orchard Road` and the ntfy message lists the store and the distance in km.
-
-## Alerts with ntfy
-
-1. Install the ntfy app from https://ntfy.sh on the phone that should buzz.
-2. In the app, subscribe to the same topic you put in `NTFY_TOPIC`.
-3. Leave `NTFY_SERVER` as `https://ntfy.sh`, or set it to the origin of a server you run. No trailing slash.
-4. Run `npm run test-notify` and confirm the phone shows the test.
-
-The checker sends `POST {NTFY_SERVER}/{NTFY_TOPIC}`. The body is the alert text. The headers are `Title` (the subject), `Priority: high`, `Tags: iphone`, and `Click` set to the product URL. Anyone who knows the topic can read the alerts, so keep the topic random. There is no token in this setup.
-
-Email via Resend (`RESEND_API_KEY`, `EMAIL_TO`, optional `EMAIL_FROM`) and Discord (`DISCORD_WEBHOOK_URL`) still work, in any combination with ntfy. Leave them empty if you only want ntfy.
-
-## Configuration
-
-| Variable | Default in code | Role |
-| --- | --- | --- |
-| `POSTAL_CODE` | required | Search location. Singapore accepts 6 digits, including a leading zero. |
-| `COUNTRY` | `ca` | `SG` or `sg` uses the Singapore store. `us` and `ca` behave as before. |
-| `PRODUCT` | `iphone-duo` | Store page. A bare slug means `buy-iphone/<slug>`. |
-| `MODELS` | `all` | Comma-separated part numbers or words that must all appear in the model name. |
-| `PICKUP_ONLY` | off | `true` or `1` alerts on pickup only. |
-| `MAX_DISTANCE_KM` | `50` | Skip stores farther than this. The value is always kilometres, including for the US. |
-| `INTERVAL_SECONDS` | `30` | Gap between checks for `npm start`. Minimum 30. |
-| `NTFY_TOPIC` | empty | ntfy topic. Empty means ntfy is off. |
+| `POSTAL_CODE` | required | 6-digit Singapore postal code to search from. |
+| `MODELS` | required | 1–10 comma-separated part numbers. `npm run models` lists them. |
+| `NTFY_TOPIC` | required, secret | 16–64 letters, digits, `-` or `_`. Anyone who knows it can read your alerts. |
 | `NTFY_SERVER` | `https://ntfy.sh` | ntfy server origin. |
-| `HEADLESS` | `true` | Set `false` to watch the browser. |
+| `NTFY_TOKEN` | empty, secret | Access token, only for a protected ntfy server. |
+| `MAX_DISTANCE_KM` | `50` | Skip stores farther than this. 50 covers all of Singapore. |
+| `INTERVAL_SECONDS` | `120` | Seconds between checks, ±20%. Minimum 60. |
+| `ALERT_COOLDOWN_MIN` | `60` | Minimum minutes between alerts for the same store and model. |
+| `STALE_ALERT_MIN` | `60` | Minutes of failures before the one-off "cannot read Apple" notice. `0` turns it off. |
+| `PRODUCT_URL` | iPhone Duo page | Link in alerts. Also the page `npm run models` reads. |
+| `ADMIN_TOKEN` | Worker only, secret | Bearer token for the Worker's `/status`, `/check` and `/test-notify`. |
+| `STATE_FILE` | `.state.json` | Self-hosted only. Where state is saved. |
 
-## Tests
+Part numbers seen on 6 Nov 2026 for iPhone Duo in Singapore:
+
+| Part | Model |
+| --- | --- |
+| `MK2D4X/A` / `MK2E4X/A` | 256GB Star White / Night Sky |
+| `MK2F4X/A` / `MK2G4X/A` | 512GB Star White / Night Sky |
+| `MK2H4X/A` / `MK2J4X/A` | 1TB Star White / Night Sky |
+| `MK2K4X/A` / `MK2L4X/A` | 2TB Star White / Night Sky |
+
+Stores in the pickup response: Orchard Road `R669`, Marina Bay Sands `R633`, Jewel Changi Airport `R736`. From postal code 238857 they are 0.02, 3.21 and 18.2 km away.
+
+## Commands
 
 ```sh
-npm test
+npm test                 # unit tests, no network
+npm run models           # list part numbers on PRODUCT_URL
+npm run test-notify      # self-hosted: send a test ntfy message
+npm run check            # self-hosted: one check, exit 1 if Apple did not answer cleanly
+npm start                # self-hosted: check on a loop
+npm run cf:check-build   # Worker: build without deploying
+npm run cf:deploy        # Worker: deploy to your Cloudflare account
 ```
 
-The suite includes the trimmed Singapore pickup response and the existing US and Canada cases.
+A clean self-hosted check against Apple prints:
+
+```
+2026-11-06T13:17:12.985Z checked 2 model(s) at 3 store(s) within 50 km of 238857: 0 available, 0 new (e.g. "Currently unavailable")
+```
+
+## Not supported
+
+The upstream project also has the US and Canada stores, a web UI, browser push, email and Discord. This fork supports only Singapore pickup and ntfy, so that one small codebase runs both on Cloudflare and on your own machine. Use [kelindi/apple-stock](https://github.com/kelindi/apple-stock) for the rest.

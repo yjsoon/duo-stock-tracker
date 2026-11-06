@@ -1,0 +1,118 @@
+{
+  "head": {
+    "status": "200",
+    "data": {}
+  },
+  "body": {
+    "stores": [
+      {
+        "storeName": "Orchard Road",
+        "storeNumber": "R669",
+        "city": "Singapore",
+        "country": "SG",
+        "storedistance": 0.02,
+        "storeDistanceWithUnit": "0.02 km",
+        "partsAvailability": {
+          "MK2F4X/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK2F4X/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Orchard Road",
+                "storePickupProductTitle": "iPhone Duo 512GB Star White"
+              }
+            }
+          },
+          "MK2G4X/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK2G4X/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Orchard Road",
+                "storePickupProductTitle": "iPhone Duo 512GB Night Sky"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeName": "Marina Bay Sands",
+        "storeNumber": "R633",
+        "city": "Singapore",
+        "country": "SG",
+        "storedistance": 3.21,
+        "storeDistanceWithUnit": "3.21 km",
+        "partsAvailability": {
+          "MK2F4X/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK2F4X/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Marina Bay Sands",
+                "storePickupProductTitle": "iPhone Duo 512GB Star White"
+              }
+            }
+          },
+          "MK2G4X/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK2G4X/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Marina Bay Sands",
+                "storePickupProductTitle": "iPhone Duo 512GB Night Sky"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeName": "Jewel Changi Airport",
+        "storeNumber": "R736",
+        "city": "Singapore",
+        "country": "SG",
+        "storedistance": 18.2,
+        "storeDistanceWithUnit": "18.2 km",
+        "partsAvailability": {
+          "MK2F4X/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK2F4X/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Jewel Changi Airport",
+                "storePickupProductTitle": "iPhone Duo 512GB Star White"
+              }
+            }
+          },
+          "MK2G4X/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK2G4X/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Jewel Changi Airport",
+                "storePickupProductTitle": "iPhone Duo 512GB Night Sky"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}
