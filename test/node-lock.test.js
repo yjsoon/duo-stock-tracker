@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 // Runs real `src/node.js --once` processes against a local mock of Apple and ntfy (no outside network).
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/sg-pickup-message.json', import.meta.url), 'utf8'));
@@ -43,7 +43,7 @@ async function runMany(n, env, release) {
     let out = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));
-    return once(child, 'exit').then(([code]) => {
+    return once(child, 'close').then(([code]) => {
       if (++exited >= n - 1) release();
       return { code, out };
     });
@@ -87,3 +87,42 @@ test('a leftover lock, even from a dead process or empty, makes every run refuse
     server.close();
   }
 });
+
+for (const mode of ['--once', 'loop']) {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGKILL']) {
+    for (const replaced of signal === 'SIGKILL' ? [false] : [false, true]) {
+      test(`${mode} ${signal} ${replaced ? 'preserves a replacement lock' : signal === 'SIGKILL' ? 'leaves its lock for manual recovery' : 'releases its lock'}`, { timeout: 10_000 }, async (t) => {
+        const { hits, server, release, origin } = await mock();
+        const { env, lock } = setup(origin);
+        const child = spawn(process.execPath, [nodeJs, ...(mode === '--once' ? ['--once'] : [])], {
+          env: { PATH: process.env.PATH, ...env }, stdio: 'ignore',
+        });
+        const closed = once(child, 'close');
+        t.after(async () => {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+          await closed;
+          server.closeAllConnections();
+          server.close();
+          rmSync(dirname(env.STATE_FILE), { recursive: true, force: true });
+        });
+        // Wait for the held request, not a guessed delay: the checker now owns the lock.
+        await once(server, 'request', { signal: t.signal });
+        const owner = readFileSync(lock, 'utf8');
+        const replacement = '2147483647 replacement-owner\n';
+        if (replaced) writeFileSync(lock, replacement);
+        child.kill(signal);
+        assert.deepEqual(await closed, signal === 'SIGKILL' ? [null, signal] : [0, null]);
+
+        const keepsLock = replaced || signal === 'SIGKILL';
+        assert.equal(existsSync(lock), keepsLock);
+        if (keepsLock) assert.equal(readFileSync(lock, 'utf8'), replaced ? replacement : owner);
+        assert.deepEqual(hits, { apple: 1, ntfy: 0 });
+        release();
+        const [next] = await runMany(1, env, release);
+        assert.equal(next.code, keepsLock ? 1 : 0, next.out);
+        if (keepsLock) assert.match(next.out, /is locked/);
+        assert.deepEqual(hits, keepsLock ? { apple: 1, ntfy: 0 } : { apple: 2, ntfy: 1 });
+      });
+    }
+  }
+}
