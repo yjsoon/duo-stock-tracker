@@ -1,6 +1,13 @@
 node_modules/
 .env
+.dev.vars
 .state.json
+.state.json.tmp
+.state.json.lock
+# Written by older versions (web UI settings with email and ntfy topic, VAPID private keys, push subscriptions).
 settings.json
 .vapid.json
 subscriptions.json
+.wrangler/
+.amp/
+*.tar.gz

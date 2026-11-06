@@ -1,6 +1,7 @@
 {
   "name": "apple-stock-sg",
   "version": "0.2.0",
+  "description": "Get an ntfy alert when an Apple product is available for in-store pickup (Singapore by default; US and Canada too). Runs as a Cloudflare Worker or a plain Node.js process.",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -8,6 +9,16 @@
     "node": ">=22.9"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "start": "node --env-file-if-exists=.env src/node.js",
+    "check": "node --env-file-if-exists=.env src/node.js --once",
+    "test-notify": "node --env-file-if-exists=.env src/node.js --test-notify",
+    "models": "node --env-file-if-exists=.env src/node.js --models",
+    "test": "node --test test/*.test.js",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "cf:check-build": "wrangler deploy --dry-run --outdir .wrangler/dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.158.0"
   }
 }
