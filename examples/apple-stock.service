@@ -1,0 +1,15 @@
+# Linux (systemd --user): copy to ~/.config/systemd/user/apple-stock.service, then
+#   systemctl --user daemon-reload && systemctl --user enable --now apple-stock
+#   loginctl enable-linger "$USER"   # keep running when logged out
+[Unit]
+Description=Apple stock checker
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/apple-stock
+ExecStart=/usr/bin/env npm start
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

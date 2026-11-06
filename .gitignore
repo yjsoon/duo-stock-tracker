@@ -1,0 +1,6 @@
+node_modules/
+.env
+.state.json
+settings.json
+.vapid.json
+subscriptions.json
