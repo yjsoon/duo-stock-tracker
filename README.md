@@ -1,109 +1,107 @@
-# apple-stock
+# apple-stock-sg
 
-Get pinged the moment an Apple product can be picked up at a store near you, or sent by Apple's 2-hour courier delivery.
+Get a phone notification through [ntfy](https://ntfy.sh) when an iPhone (or any Apple product with a part number) can be picked up at an Apple Store near you. Singapore is the default. The United States and Canada are verified too, and other Apple Store countries may work (see [Countries](#countries)).
 
-It was built for the iPhone Duo on apple.com/ca and works for every iPhone, iPad, Mac, Studio Display and AirPods model in the store (Apple Watch isn't supported yet). It works in the US and Canadian Apple Stores: pick the country in the UI (ZIP codes and miles for the US). Pick a product from the menu in the UI and narrow it down by colour, storage, size, chip or connectivity. For Macs, only the standard configurations that stores keep in stock are listed. Custom build-to-order Macs always ship from Apple.
+It runs in one of two ways. Both use the same check code and settings.
 
-## How it works
+- **Cloudflare Worker** on your own Cloudflare account. The Workers Free plan is enough. Nothing runs on your machine.
+- **Self-hosted**: one Node.js 22.9+ process on any always-on machine. It needs no npm packages.
 
-Every couple of minutes it:
+To have a coding agent set it up for you, point Claude Code, Codex or a similar agent at this repo and say "set this up". [AGENTS.md](AGENTS.md) walks the agent through it. `CLAUDE.md` just imports that file. To set it up by hand, follow the same steps yourself.
 
-1. **Opens the product page** in a hidden Chrome browser, e.g. `apple.com/ca/shop/buy-iphone/iphone-duo`. The page lists every model with its part number, colour, storage and price, and the UI is built from that list.
-2. **Asks Apple's stock API** (`/shop/fulfillment-messages`), the same one the Apple Store website uses, about each model near your postal code:
-   - **Pickup**: is it available at an Apple Store within `MAX_DISTANCE_KM`?
-   - **Courier**: can it be delivered by 2-hour courier?
+Based on [kelindi/apple-stock](https://github.com/kelindi/apple-stock) by Kelindi, used under the MIT License. See [LICENSE](LICENSE).
 
-   Apple blocks scripts that call this API directly (they get error `541`). Calling it from inside the real page gets past that.
-3. **Compares with last time** (saved in `.state.json`). If something went from unavailable to available, it notifies you. You get one alert per item, and you'll get another if it sells out and comes back.
+## How a check works
+
+Each check sends one HTTP GET to the in-store pickup endpoint of the country's Apple Store:
 
 ```
-src/index.js    starts everything: the check loop and the web UI
-src/apple.js    talks to apple.com: product menu, product pages, stock API
-src/parse.js    turns Apple's pages and API replies into models and availability
-src/checker.js  settings, filters, "what's new since last check", notifications
-src/notify.js   email, ntfy and Discord; src/push.js is phone/browser push
-src/server.js   the local web UI (src/ui.html) and its small API
+https://www.apple.com/sg/shop/retail/pickup-message?pl=true&location=<POSTAL_CODE>&parts.0=<PART>&parts.1=<PART>
+https://www.apple.com/shop/retail/pickup-message?...      (US: no country segment)
+https://www.apple.com/ca/shop/retail/pickup-message?...   (other countries: /<cc>/shop)
 ```
 
-## Adding a new device to track
+Apple answers this from a plain HTTP client, so no browser is needed. The checker keeps the session cookies Apple sets and sends them back on the next check. `src/parse.js` turns `body.stores` into one row per store and part. An alert goes out when a store/part is `pickupDisplay: "available"` and was not available at the last clean check. Apple gives US distances in miles. Alerts show them in miles, and `MAX_DISTANCE_KM` is converted to kilometres for filtering.
 
-**New models in a category it already covers** (a new iPhone, iPad, Mac or AirPods) need no work. On every start, the menu is rebuilt from Apple's own store pages.
+The defaults are conservative, because Apple and ntfy.sh both push back on frequent requests:
 
-**A new category** (e.g. Apple Watch or Vision Pro) is one row in `CATEGORIES` at the top of [`src/apple.js`](src/apple.js):
+- **Cadence.** A check runs every `INTERVAL_SECONDS` (default 120, minimum 60) with ±20% jitter, so 96–144 s. At 15–20 s cadence Apple returned long runs of HTTP 541 ("Page Not Found" HTML). At around 2 minutes most checks came back clean.
+- **Failures.** A 541, a timeout or non-JSON counts as unknown. The checker tries again at the normal cadence and changes no state. A 403 or 429 drops the session and doubles the wait, up to ×8. A `Retry-After` header is honoured, capped at 15 minutes.
+- **Alert dedupe.** All new finds in one check go into one ntfy message, with one line per model listing every store, and no repeats. Only an explicit "unavailable" in a clean response clears a find. A failed check, a response that leaves a store out, or a part entry with missing fields counts as unknown and never re-arms an alert. The same store and model alerts at most once per `ALERT_COOLDOWN_MIN` (default 60), even if stock flaps. If ntfy rejects a send, for example with ntfy.sh's daily limit (HTTP 429), the find is retried on the next check.
+- **Blind notice.** After `STALE_ALERT_MIN` (default 60) minutes without a clean answer, you get one low-priority "cannot read Apple" message. It says stock is unknown and is not a stock alert. It resets after the next clean check.
 
-```js
-{ id: 'buy-vision', index: 'shop/buy-vision', link: /shop\/buy-vision\/([a-z0-9-]+)/g },
+The same request to `/sg/shop/fulfillment-messages`, which also carries delivery and courier data, returned HTTP 541 every time it was tried in Singapore, from a server, a Cloudflare Worker and a real browser. This checker therefore covers in-store pickup only.
+
+```
+src/core.js     config, the Apple request, alert rules, ntfy
+src/parse.js    Apple response parsers
+src/node.js     self-hosted loop and CLI (state in .state.json)
+src/worker.js   Cloudflare Worker + Durable Object (state in Durable Object storage)
+wrangler.jsonc  Worker config and non-secret settings
+test/           node --test suite, with trimmed live SG and US responses in test/fixtures/
 ```
 
-- `id`: the part of the store URL before the model, as in `apple.com/ca/shop/buy-vision/apple-vision-pro`.
-- `index`: a page that links to every model in that category.
-- `link`: the pattern of those links; the bit in brackets is the model name.
+## Settings
 
-Then restart and check that it shows up in the menu.
+Self-hosted reads `.env` (copy `.env.example`). The Worker reads `vars` in `wrangler.jsonc` and secrets set with `npx wrangler secret put`.
 
-If it doesn't, Apple's product page uses a layout the app can't read yet. `parseCatalog` in [`src/parse.js`](src/parse.js) reads the two layouts Apple uses today:
-- iPhone/iPad/AirPods pages: `displayValues` + `products[].partNumber`.
-- Mac pages: `mainDisplayValues` + `products[].btrOrFdPartNumber`.
+| Name | Default | Meaning |
+| --- | --- | --- |
+| `COUNTRY` | `sg` | Apple Store country code: `sg`, `us`, `ca`, or another (unverified). |
+| `POSTAL_CODE` | required | Postal code to search from, in that country's format (`238857`, `10001`, `M5V3L9`). |
+| `MODELS` | required | 1–10 comma-separated part numbers. `npm run models` lists them. |
+| `NTFY_TOPIC` | required, secret | 16–64 letters, digits, `-` or `_`. Anyone who knows it can read your alerts. |
+| `NTFY_SERVER` | `https://ntfy.sh` | ntfy server origin. |
+| `NTFY_TOKEN` | empty, secret | Access token, only for a protected ntfy server. |
+| `MAX_DISTANCE_KM` | `50` | Skip stores farther than this, always in km. 50 covers all of Singapore. |
+| `INTERVAL_SECONDS` | `120` | Seconds between checks, ±20%. Minimum 60. |
+| `ALERT_COOLDOWN_MIN` | `60` | Minimum minutes between alerts for the same store and model. |
+| `STALE_ALERT_MIN` | `60` | Minutes of failures before the one-off "cannot read Apple" notice. `0` turns it off. |
+| `PRODUCT_URL` | iPhone Duo page in `COUNTRY` | Link in alerts. Also the page `npm run models` reads. |
+| `ADMIN_TOKEN` | Worker only, secret | Bearer token for the Worker's `/status`, `/check` and `/test-notify`. |
+| `STATE_FILE` | `.state.json` | Self-hosted only. Where state is saved. One process at a time owns it through `STATE_FILE.lock`. A leftover lock blocks start until it is deleted; see AGENTS.md. |
 
-A new layout needs a function like `parseMacCatalog` that returns the same shape: a `title`, the option `dimensions`, and `models` with a part number, chosen options, image and price. To see what the page contains, run `productSelectionData(html)` on it. Then add a trimmed copy of the page to `test/fixtures/` with a test (`npm test`).
+## Countries
 
-You can also skip the UI and set `PRODUCT=buy-vision/apple-vision-pro` in `.env`.
+Part numbers differ by country: Singapore ends in `X/A`, the US in `LL/A`, Canada in `VC/A`. Run `COUNTRY=us npm run models` to list them. Verified live on 6 Nov 2026:
 
-## Run it at home (recommended)
+| Country | Path | Example postal code | Clean check |
+| --- | --- | --- | --- |
+| `sg` | `/sg/shop` | `238857` | 3 stores, km |
+| `us` | `/shop` | `10001` | 12 stores, mi |
+| `ca` | `/ca/shop` | `M5V3L9` | 8 stores within 50 km, km |
 
-A computer that stays on is the best option. It has a home IP, checks run on time, and the default is one check every 2 minutes.
+Any other `COUNTRY` uses `/<cc>/shop` with a loose postal-code check. It has not been verified. [AGENTS.md](AGENTS.md) explains how to try one.
+
+Part numbers seen on 6 Nov 2026 for iPhone Duo in Singapore:
+
+| Part | Model |
+| --- | --- |
+| `MK2D4X/A` / `MK2E4X/A` | 256GB Star White / Night Sky |
+| `MK2F4X/A` / `MK2G4X/A` | 512GB Star White / Night Sky |
+| `MK2H4X/A` / `MK2J4X/A` | 1TB Star White / Night Sky |
+| `MK2K4X/A` / `MK2L4X/A` | 2TB Star White / Night Sky |
+
+Singapore stores in the pickup response: Orchard Road `R669`, Marina Bay Sands `R633`, Jewel Changi Airport `R736`. From postal code 238857 they are 0.02, 3.21 and 18.2 km away.
+
+## Commands
 
 ```sh
-git clone https://github.com/kelindi/apple-stock && cd apple-stock
-npm install
-npx playwright install chromium
-cp .env.example .env          # fill in POSTAL_CODE and a notifier
-npm run test-notify           # sends a test notification
-npm start                     # checks every INTERVAL_SECONDS until stopped
+npm test                 # unit tests, no network
+npm run models           # list part numbers on PRODUCT_URL
+npm run test-notify      # self-hosted: send a test ntfy message
+npm run check            # self-hosted: one check, exit 1 if Apple did not answer cleanly
+npm start                # self-hosted: check on a loop
+npm run cf:check-build   # Worker: build without deploying
+npm run cf:deploy        # Worker: deploy to your Cloudflare account
 ```
 
-To run a single check: `npm run check`. Add `-- --dry-run` to log results without notifying or saving state.
+A clean self-hosted check against Apple prints:
 
-Then open http://localhost:4321 to pick the country, model, colours, storage and postal/ZIP code.
+```
+2026-11-06T13:17:12.985Z checked 2 model(s) at 3 store(s) within 50 km of 238857: 0 available, 0 new (e.g. "Currently unavailable")
+```
 
-**On your phone:** browsers only allow push notifications on HTTPS pages, so the phone needs an HTTPS link to the computer. The easiest private way is [Tailscale](https://tailscale.com): install it on both devices, run `tailscale serve --bg 4321` on the computer, and open the `https://<computer>.<tailnet>.ts.net` link it prints. Don't expose the UI on the public internet: anyone who can open it can change the settings.
+## Not supported
 
-To keep it running after reboots, see [`examples/com.apple-stock.plist`](examples/com.apple-stock.plist) (macOS launchd) or [`examples/apple-stock.service`](examples/apple-stock.service) (Linux systemd).
-
-## Run it on GitHub Actions
-
-For when you don't have a computer that's always on.
-
-1. Fork this repo. Scheduled workflows are free on public repos.
-2. Under **Settings → Secrets and variables → Actions**:
-   - Add the **variable** `POSTAL_CODE`, plus `MODELS`, `MAX_DISTANCE_KM`, `COUNTRY` or `PRODUCT` if you want something other than the defaults.
-   - Add the **secrets** for your notifier: `RESEND_API_KEY` + `EMAIL_TO` (+ `EMAIL_FROM`), `NTFY_TOPIC` or `DISCORD_WEBHOOK_URL`.
-3. Under **Actions**, enable workflows and run **Check stock** once by hand to confirm it works.
-
-The workflow is scheduled every 5 minutes, but GitHub often starts scheduled runs late, and it turns off schedules after 60 days without commits. For on-time checks, have a free cron service such as [cron-job.org](https://cron-job.org) call `POST https://api.github.com/repos/<you>/apple-stock/actions/workflows/check.yml/dispatches` with body `{"ref":"main"}` and a fine-grained token that has Actions read/write on the fork.
-
-## Configuration
-
-| Variable | Default | |
-| --- | --- | --- |
-| `POSTAL_CODE` | (required) | Location used for store search and courier delivery, e.g. `M5V3L9` |
-| `COUNTRY` | `ca` | Starting Apple Store country (`ca` or `us`, switchable in the UI; other paths like `uk` or `au` work from here) |
-| `PRODUCT` | `iphone-duo` | Store page path, e.g. `buy-iphone/iphone-17`, `buy-ipad/ipad-air`, `buy-mac/macbook-air`, `buy-airpods/airpods-pro-3` (a bare slug means `buy-iphone/<slug>`) |
-| `MODELS` | `all` | Comma-separated part numbers or words that must all appear in the model name, e.g. `256GB Night Sky, 512GB` |
-| `MAX_DISTANCE_KM` | `50` | Ignore stores farther than this |
-| `INTERVAL_SECONDS` | `30` | Time between checks for `npm start` (minimum 30, with ±15% jitter) |
-| `STATE_FILE` | `.state.json` | Where the last seen availability is stored |
-| `HEADLESS` | `true` | Set to `false` to watch the browser |
-
-### Notifiers
-
-Configure any combination of these:
-
-- **Phone/desktop notifications** (built in, free, no account): open the UI and tap **Turn on notifications**. On iPhone (iOS 16.4+), open the page in Safari, tap Share → **Add to Home Screen**, open it from the home screen, then turn notifications on. Alerts are sent with standard Web Push, so they arrive even when the app is closed. Keys are generated into `.vapid.json` on first run (or set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`), and devices are saved in `subscriptions.json`.
-- **Email** via [Resend](https://resend.com) (free tier: 3,000 emails/month): `RESEND_API_KEY`, `EMAIL_TO` (comma-separated), and optionally `EMAIL_FROM`. Without a verified domain, Resend only delivers to the email on your Resend account, using the default `onboarding@resend.dev` sender.
-- **Push** via [ntfy](https://ntfy.sh) (free app for iPhone/Android): tap **Get alerts in the ntfy app** in the UI. It picks a random topic; subscribe to that topic in the app (or tap **Subscribe**) and tap **Test**. Anyone who knows the topic can read it, so keep it random. You can also set `NTFY_TOPIC` (plus `NTFY_SERVER` if you self-host).
-- **Discord**: `DISCORD_WEBHOOK_URL` from a channel's Integrations → Webhooks.
-
-## Caveats
-
-This uses Apple's undocumented storefront endpoints, which can change without notice. Be gentle: checking every couple of minutes is plenty. This project is not affiliated with Apple.
+The upstream project also has a web UI, browser push, email, Discord and delivery/courier alerts. This fork supports only in-store pickup and ntfy, so that one small codebase runs both on Cloudflare and on your own machine. Use [kelindi/apple-stock](https://github.com/kelindi/apple-stock) for the rest.
