@@ -1,15 +1,22 @@
-# Linux (systemd --user): copy to ~/.config/systemd/user/apple-stock.service, then
-#   systemctl --user daemon-reload && systemctl --user enable --now apple-stock
-#   loginctl enable-linger "$USER"   # keep running when logged out
+# systemd user unit for the self-hosted checker.
+# 1. Set WorkingDirectory to the absolute path of this checkout, and ExecStart to your `node` path (`command -v node`).
+# 2. cp examples/apple-stock.service ~/.config/systemd/user/apple-stock.service
+# 3. systemctl --user daemon-reload && systemctl --user enable --now apple-stock
+# 4. loginctl enable-linger "$USER"   # keep it running after you log out
+# Logs: journalctl --user -u apple-stock -f
 [Unit]
-Description=Apple stock checker
+Description=apple-stock-sg pickup checker
 After=network-online.target
+Wants=network-online.target
 
 [Service]
-WorkingDirectory=%h/apple-stock
-ExecStart=/usr/bin/env npm start
+WorkingDirectory=%h/apple-stock-sg
+# systemd runs one instance of this unit, so a lock left at start is stale (crash, kill or reboot). Clearing it
+# here lets Restart= recover by itself. Don't run `npm run check` on the same STATE_FILE while the service starts.
+ExecStartPre=/bin/rm -f .state.json.lock
+ExecStart=/usr/bin/node --env-file=.env src/node.js
 Restart=always
-RestartSec=30
+RestartSec=60
 
 [Install]
 WantedBy=default.target
