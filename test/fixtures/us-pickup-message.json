@@ -1,0 +1,125 @@
+{
+  "head": {
+    "status": "200",
+    "data": {}
+  },
+  "body": {
+    "stores": [
+      {
+        "storeName": "West 14th Street",
+        "storeNumber": "R250",
+        "city": "New York",
+        "country": "US",
+        "storedistance": 0.66,
+        "storeDistanceWithUnit": "0.66 mi",
+        "partsAvailability": {
+          "MK1L4LL/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK1L4LL/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple West 14th Street",
+                "storePickupProductTitle": "iPhone Duo 1TB Night Sky"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeName": "Grand Central",
+        "storeNumber": "R415",
+        "city": "New York",
+        "country": "US",
+        "storedistance": 1.35,
+        "storeDistanceWithUnit": "1.35 mi",
+        "partsAvailability": {
+          "MK1L4LL/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK1L4LL/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Grand Central",
+                "storePickupProductTitle": "iPhone Duo 1TB Night Sky"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeName": "SoHo",
+        "storeNumber": "R032",
+        "city": "New York",
+        "country": "US",
+        "storedistance": 1.77,
+        "storeDistanceWithUnit": "1.77 mi",
+        "partsAvailability": {
+          "MK1L4LL/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK1L4LL/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple SoHo",
+                "storePickupProductTitle": "iPhone Duo 1TB Night Sky"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeName": "Fifth Avenue",
+        "storeNumber": "R095",
+        "city": "New York",
+        "country": "US",
+        "storedistance": 1.8,
+        "storeDistanceWithUnit": "1.8 mi",
+        "partsAvailability": {
+          "MK1L4LL/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK1L4LL/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Fifth Avenue",
+                "storePickupProductTitle": "iPhone Duo 1TB Night Sky"
+              }
+            }
+          }
+        }
+      },
+      {
+        "storeName": "Upper West Side",
+        "storeNumber": "R251",
+        "city": "New York",
+        "country": "US",
+        "storedistance": 1.99,
+        "storeDistanceWithUnit": "1.99 mi",
+        "partsAvailability": {
+          "MK1L4LL/A": {
+            "storePickEligible": true,
+            "pickupSearchQuote": "Currently unavailable",
+            "partNumber": "MK1L4LL/A",
+            "pickupDisplay": "unavailable",
+            "pickupType": "In-Store Pickup",
+            "messageTypes": {
+              "regular": {
+                "storePickupQuote": "Currently unavailable at Apple Upper West Side",
+                "storePickupProductTitle": "iPhone Duo 1TB Night Sky"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}
