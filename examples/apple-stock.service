@@ -1,9 +1,12 @@
 # systemd user unit for the self-hosted checker.
-# 1. Set WorkingDirectory to the absolute path of this checkout, and ExecStart to your `node` path (`command -v node`).
-# 2. cp examples/apple-stock.service ~/.config/systemd/user/apple-stock.service
-# 3. systemctl --user daemon-reload && systemctl --user enable --now apple-stock
-# 4. loginctl enable-linger "$USER"   # keep it running after you log out
-# Logs: journalctl --user -u apple-stock -f
+# 1. Set WorkingDirectory to this checkout's absolute path. Run `command -v node` and replace only /usr/bin/node:
+#    ExecStart=/usr/bin/node --env-file=.env src/node.js
+# 2. mkdir -p ~/.config/systemd/user
+# 3. cp examples/apple-stock.service ~/.config/systemd/user/apple-stock.service
+# 4. systemctl --user daemon-reload && systemctl --user enable --now apple-stock.service
+# 5. loginctl enable-linger "$USER"   # keep it running after logout; may require administrator approval
+# Logs: journalctl --user -u apple-stock.service -f
+# Stop and disable startup: systemctl --user disable --now apple-stock.service
 [Unit]
 Description=duo-stock-tracker pickup checker
 After=network-online.target
