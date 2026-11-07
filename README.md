@@ -1,4 +1,4 @@
-# apple-stock-sg
+# duo-stock-tracker
 
 Get a phone notification through [ntfy](https://ntfy.sh) when an iPhone (or any Apple product with a part number) can be picked up at an Apple Store near you. Singapore is the default. The United States and Canada are verified too, and other Apple Store countries may work (see [Countries](#countries)).
 

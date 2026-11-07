@@ -1,4 +1,4 @@
-# Agent guide: set up apple-stock-sg
+# Agent guide: set up duo-stock-tracker
 
 This repo watches Apple Store in-store pickup stock (Singapore by default; the US and Canada are verified too) and sends alerts through ntfy. When the user asks you to "set this up", follow this file from top to bottom. Read [README.md](README.md) for how checks and alerts work.
 
@@ -60,7 +60,7 @@ State is in `.state.json`. Deleting it while stock is available makes the next c
 
    ```sh
    npm run cf:check-build   # no upload; lists the WATCHER Durable Object and the vars
-   npm run cf:deploy        # prints https://apple-stock-sg.<subdomain>.workers.dev
+   npm run cf:deploy        # prints https://duo-stock-tracker.<subdomain>.workers.dev
    ```
 
    If the account has no workers.dev subdomain yet, wrangler asks the user to choose one.

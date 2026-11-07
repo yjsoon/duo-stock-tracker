@@ -5,12 +5,12 @@
 # 4. loginctl enable-linger "$USER"   # keep it running after you log out
 # Logs: journalctl --user -u apple-stock -f
 [Unit]
-Description=apple-stock-sg pickup checker
+Description=duo-stock-tracker pickup checker
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-WorkingDirectory=%h/apple-stock-sg
+WorkingDirectory=%h/duo-stock-tracker
 ExecStart=/usr/bin/node --env-file=.env src/node.js
 Restart=always
 RestartSec=60

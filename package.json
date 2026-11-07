@@ -1,5 +1,5 @@
 {
-  "name": "apple-stock-sg",
+  "name": "duo-stock-tracker",
   "version": "0.2.0",
   "description": "Get an ntfy alert when an Apple product is available for in-store pickup (Singapore by default; US and Canada too). Runs as a Cloudflare Worker or a plain Node.js process.",
   "type": "module",
