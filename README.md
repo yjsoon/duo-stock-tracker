@@ -5,11 +5,17 @@ Get a phone notification through [ntfy](https://ntfy.sh) when an iPhone (or any 
 It runs in one of two ways. Both use the same check code and settings.
 
 - **Cloudflare Worker** on your own Cloudflare account. The Workers Free plan is enough. Nothing runs on your machine.
-- **Self-hosted**: one Node.js 22.9+ process on any always-on machine. It needs no npm packages.
+- **Self-hosted**: one Node.js 22.9+ process on any always-on machine. The Node runtime has no npm dependencies. `npm install` installs development tooling (Wrangler and its dependencies), not runtime packages. Self-hosters can skip it, including for `npm test`, which uses Node's built-in test runner; Worker tooling requires it.
 
 To have a coding agent set it up for you, point Claude Code, Codex or a similar agent at this repo and say "set this up". [AGENTS.md](AGENTS.md) walks the agent through it. `CLAUDE.md` just imports that file. To set it up by hand, follow the same steps yourself.
 
 Based on [kelindi/apple-stock](https://github.com/kelindi/apple-stock) by Kelindi, used under the MIT License. See [LICENSE](LICENSE).
+
+## Privacy and delivery
+
+Each check sends your postal code and selected part numbers to Apple. The default 50 km radius covers all three Singapore stores, not just Orchard Road. Notification messages also go to the configured ntfy server; the test message includes your postal code and part numbers. On public ntfy, anyone who knows the topic can read and publish to it, so use a new random topic and keep it secret. [The setup guide](AGENTS.md#2-prepare-both-targets) writes it directly into a private `.env`; open that file privately to subscribe, rather than sharing the topic in chat or logs.
+
+A successful `npm run test-notify` (exit 0), or `{ "ok": true }` from the Worker's `/test-notify`, means ntfy accepted the message, not that your phone received it. Confirm receipt on the phone before relying on alerts.
 
 ## How a check works
 
@@ -25,7 +31,7 @@ Apple answers this from a plain HTTP client, so no browser is needed. The checke
 
 The defaults are conservative, because Apple and ntfy.sh both push back on frequent requests:
 
-- **Cadence.** A check runs every `INTERVAL_SECONDS` (default 120, minimum 60) with ±20% jitter, so 96–144 s. At 15–20 s cadence Apple returned long runs of HTTP 541 ("Page Not Found" HTML). At around 2 minutes most checks came back clean.
+- **Cadence.** A check runs every `INTERVAL_SECONDS` (default and recommended minimum 120; code-enforced hard minimum 60) with ±20% jitter, so 96–144 s at the default. At 15–20 s cadence Apple returned long runs of HTTP 541 ("Page Not Found" HTML). At around 2 minutes most checks came back clean.
 - **Failures.** A 541, a timeout or non-JSON counts as unknown. The checker tries again at the normal cadence and changes no state. A 403 or 429 drops the session and doubles the wait, up to ×8. A `Retry-After` header is honoured, capped at 15 minutes.
 - **Alert dedupe.** All new finds in one check go into one ntfy message, with one line per model listing every store, and no repeats. Only an explicit "unavailable" in a clean response clears a find. A failed check, a response that leaves a store out, or a part entry with missing fields counts as unknown and never re-arms an alert. The same store and model alerts at most once per `ALERT_COOLDOWN_MIN` (default 60), even if stock flaps. If ntfy rejects a send, for example with ntfy.sh's daily limit (HTTP 429), the find is retried on the next check.
 - **Blind notice.** After `STALE_ALERT_MIN` (default 60) minutes without a clean answer, you get one low-priority "cannot read Apple" message. It says stock is unknown and is not a stock alert. It resets after the next clean check.
@@ -50,11 +56,11 @@ Self-hosted reads `.env` (copy `.env.example`). The Worker reads `vars` in `wran
 | `COUNTRY` | `sg` | Apple Store country code: `sg`, `us`, `ca`, or another (unverified). |
 | `POSTAL_CODE` | required | Postal code to search from, in that country's format (`238857`, `10001`, `M5V3L9`). |
 | `MODELS` | required | 1–10 comma-separated part numbers. `npm run models` lists them. |
-| `NTFY_TOPIC` | required, secret | 16–64 letters, digits, `-` or `_`. Anyone who knows it can read your alerts. |
+| `NTFY_TOPIC` | required, secret | 16–64 letters, digits, `-` or `_`. On public ntfy, anyone who knows it can read and publish to it. |
 | `NTFY_SERVER` | `https://ntfy.sh` | ntfy server origin. |
 | `NTFY_TOKEN` | empty, secret | Access token, only for a protected ntfy server. |
-| `MAX_DISTANCE_KM` | `50` | Skip stores farther than this, always in km. 50 covers all of Singapore. |
-| `INTERVAL_SECONDS` | `120` | Seconds between checks, ±20%. Minimum 60. |
+| `MAX_DISTANCE_KM` | `50` | Skip stores farther than this, always in km. 50 covers all three Singapore stores, not only Orchard. |
+| `INTERVAL_SECONDS` | `120` | Seconds between checks, ±20%. Recommended minimum 120; code-enforced hard minimum 60. |
 | `ALERT_COOLDOWN_MIN` | `60` | Minimum minutes between alerts for the same store and model. |
 | `STALE_ALERT_MIN` | `60` | Minutes of failures before the one-off "cannot read Apple" notice. `0` turns it off. |
 | `PRODUCT_URL` | iPhone Duo page in `COUNTRY` | Link in alerts. Also the page `npm run models` reads. |
@@ -95,6 +101,10 @@ npm start                # self-hosted: check on a loop
 npm run cf:check-build   # Worker: build without deploying
 npm run cf:deploy        # Worker: deploy to your Cloudflare account
 ```
+
+Wrangler may print a usage telemetry notice, including during `cf:check-build`. Opt out with `export WRANGLER_SEND_METRICS=false` before running Wrangler, or `npx wrangler telemetry disable`. Separately, `wrangler.jsonc` enables `observability`: Cloudflare collects and stores Worker invocation and console logs, including check summaries with your postal code. Disabling Wrangler telemetry does not disable Worker observability.
+
+For self-hosted start, logs and stop commands, see [AGENTS.md](AGENTS.md#3a-self-hosted). The systemd unit stops and disables with `systemctl --user disable --now apple-stock.service`; a foreground or attached tmux run stops with Ctrl-C.
 
 A clean self-hosted check against Apple prints:
 
