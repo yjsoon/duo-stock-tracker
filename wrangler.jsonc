@@ -1,6 +1,6 @@
 {
-  // Cloudflare Worker for apple-stock-sg. See AGENTS.md for setup.
-  "name": "apple-stock-sg",
+  // Cloudflare Worker for duo-stock-tracker. See AGENTS.md for setup.
+  "name": "duo-stock-tracker",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-30",
   "workers_dev": true,
