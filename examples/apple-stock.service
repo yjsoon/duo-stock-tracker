@@ -11,9 +11,6 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=%h/apple-stock-sg
-# systemd runs one instance of this unit, so a lock left at start is stale (crash, kill or reboot). Clearing it
-# here lets Restart= recover by itself. Don't run `npm run check` on the same STATE_FILE while the service starts.
-ExecStartPre=/bin/rm -f .state.json.lock
 ExecStart=/usr/bin/node --env-file=.env src/node.js
 Restart=always
 RestartSec=60

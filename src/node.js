@@ -68,6 +68,8 @@ async function main() {
   }
 
   await lockState();
+  let timer;
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { clearTimeout(timer); process.exit(0); });
   let state = await loadState();
   const check = async () => {
     const result = await runCheck(config, state);
@@ -84,7 +86,6 @@ async function main() {
   }
 
   log(`watching ${config.models.join(', ')} near ${config.postalCode}, about every ${config.intervalS}s`);
-  let timer;
   const loop = async () => {
     let delayMs = config.intervalS * 1000;
     try {
@@ -96,7 +97,6 @@ async function main() {
     timer = setTimeout(loop, delayMs);
   };
   loop();
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { clearTimeout(timer); process.exit(0); });
 }
 
 main().catch((err) => {
